@@ -4,7 +4,7 @@ import { subDays } from 'date-fns';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ error: 'metaAccountId required' }, { status: 400 });
     }
 
-    const campaignId = params.id;
+    const { id: campaignId } = await params;
 
     // Получаем последний анализ
     const analysis = await prisma.analysis.findFirst({
