@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // directUrl = env("DIRECT_URL")  // Commented out for Supabase pooler compatibility
+}
+
+// Пользователи
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  metaAccounts MetaAccount[]
+
+  @@map("users")
+}
+
+// Meta рекламные аккаунты
+model MetaAccount {
+  id              String   @id @default(cuid())
+  userId          String
+  accountId       String   @unique
+  accountName     String?
+  accessToken     String
+  tokenExpiresAt  DateTime?
+  currency        String?
+  timezone        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  campaigns       CampaignSnapshot[]
+  adsets          AdsetSnapshot[]
+  ads             AdSnapshot[]
+  creatives       Creative[]
+  analyses        Analysis[]
+
+  @@index([userId])
+  @@map("meta_accounts")
+}
+
+// Кампании (snapshot модель - временные ряды)
+model CampaignSnapshot {
+  id              String   @id @default(cuid())
+  metaAccountId   String
+  campaignId      String
+  campaignName    String?
+  status          String?
+  objective       String?
+  dailyBudget     Decimal? @db.Decimal(12, 2)
+  lifetimeBudget  Decimal? @db.Decimal(12, 2)
+
+  // Метрики
+  spend           Decimal? @db.Decimal(12, 2)
+  impressions     Int?
+  clicks          Int?
+  conversions     Int?
+  cpa             Decimal? @db.Decimal(12, 2)
+  ctr             Decimal? @db.Decimal(8, 4)
+  cpm             Decimal? @db.Decimal(12, 2)
+
+  snapshotDate    DateTime @db.Date
+  createdAt       DateTime @default(now())
+
+  metaAccount     MetaAccount @relation(fields: [metaAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, snapshotDate])
+  @@index([metaAccountId, snapshotDate])
+  @@index([campaignId])
+  @@map("campaigns_snapshots")
+}
+
+// Ad Sets (snapshot модель)
+model AdsetSnapshot {
+  id                String   @id @default(cuid())
+  metaAccountId     String
+  campaignId        String?
+  adsetId           String
+  adsetName         String?
+  status            String?
+  optimizationGoal  String?
+  billingEvent      String?
+  dailyBudget       Decimal? @db.Decimal(12, 2)
+
+  // Таргетинг (JSON)
+  targeting         Json?
+
+  // Метрики
+  spend             Decimal? @db.Decimal(12, 2)
+  impressions       Int?
+  clicks            Int?
+  conversions       Int?
+  cpa               Decimal? @db.Decimal(12, 2)
+
+  snapshotDate      DateTime @db.Date
+  createdAt         DateTime @default(now())
+
+  metaAccount       MetaAccount @relation(fields: [metaAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([adsetId, snapshotDate])
+  @@index([metaAccountId, snapshotDate])
+  @@index([adsetId])
+  @@map("adsets_snapshots")
+}
+
+// Ads (snapshot модель)
+model AdSnapshot {
+  id              String   @id @default(cuid())
+  metaAccountId   String
+  adsetId         String?
+  adId            String
+  adName          String?
+  status          String?
+  creativeId      String?
+
+  // Метрики
+  spend           Decimal? @db.Decimal(12, 2)
+  impressions     Int?
+  clicks          Int?
+  conversions     Int?
+  cpa             Decimal? @db.Decimal(12, 2)
+  ctr             Decimal? @db.Decimal(8, 4)
+
+  snapshotDate    DateTime @db.Date
+  createdAt       DateTime @default(now())
+
+  metaAccount     MetaAccount @relation(fields: [metaAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([adId, snapshotDate])
+  @@index([metaAccountId, snapshotDate])
+  @@index([adId])
+  @@map("ads_snapshots")
+}
+
+// Креативы
+model Creative {
+  id                  String   @id @default(cuid())
+  metaAccountId       String
+  creativeId          String   @unique
+  creativeName        String?
+
+  // Медиа
+  imageUrl            String?
+  videoUrl            String?
+  thumbnailUrl        String?
+
+  // Контент
+  title               String?
+  body                String?  @db.Text
+  callToAction        String?
+  linkUrl             String?
+
+  // AI анализ (когда появится)
+  visionDescription   String?  @db.Text
+  formatType          String?  // ugc, expert_talking, dialog, static
+  hookQuality         String?  // good, poor, unknown
+  metaNative          Boolean?
+
+  // Агрегированные метрики (последний snapshot)
+  totalSpend          Decimal? @db.Decimal(12, 2)
+  totalImpressions    Int?
+  avgCpa              Decimal? @db.Decimal(12, 2)
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  metaAccount         MetaAccount @relation(fields: [metaAccountId], references: [id], onDelete: Cascade)
+
+  @@index([metaAccountId])
+  @@map("creatives")
+}
+
+// Анализы и рекомендации
+model Analysis {
+  id              String   @id @default(cuid())
+  metaAccountId   String
+
+  // Объект анализа
+  entityType      String   // campaign, adset, ad, creative
+  entityId        String
+
+  // Результаты
+  status          String   // ok, warning, critical
+  issues          Json     // [{type, severity, description, metricValue}]
+  recommendations Json     // [{action, reason, priority, parameters}]
+
+  // AI контекст (когда будет)
+  llmAnalysis     String?  @db.Text
+  appliedRules    String[] // ["rule_2_3", "rule_4_5_1"]
+
+  analyzedAt      DateTime @default(now())
+
+  metaAccount     MetaAccount @relation(fields: [metaAccountId], references: [id], onDelete: Cascade)
+
+  @@index([metaAccountId, entityType, entityId, analyzedAt(sort: Desc)])
+  @@map("analyses")
+}
